@@ -342,5 +342,171 @@ pin('verify still catches junk-after-sig (via strict parse, not sig check)', () 
 });
 
 
+// --- L3 witness quorum (C2SP-shaped, this window) ---
+// Client-side check per docs/L3-QUORUM.md: named policy, strict-majority
+// bound, operator note + witness cosigs over the v0.1 signer seam. Witness
+// daemons remain design-gated; these pins exercise the mechanism only.
+const qu = require('../src/quorum.js');
+
+const pem = (kp) => kp.publicKey.export({ type: 'spki', format: 'pem' });
+const priv = (kp) => kp.privateKey.export({ type: 'pkcs8', format: 'pem' });
+const kpW2 = require('crypto').generateKeyPairSync('ed25519');
+const kpW3 = require('crypto').generateKeyPairSync('ed25519');
+const kpOp = require('crypto').generateKeyPairSync('ed25519');
+const policy3 = qu.loadPolicy({
+  name: 'fleet-wal-prod', origin: cp.ORIGIN,
+  log: { ed25519: pem(kpOp) },
+  witnesses: [
+    { name: 'kimi1', ed25519: pubPem },
+    { name: 'z-worker', ed25519: pem(kpW2) },
+    { name: 'casey', ed25519: pem(kpW3) },
+  ],
+  quorum: { kind: 'k-of-n', k: 2, n: 3 },
+});
+const opNote = cp.sign(s5.size, s5.root, priv(kpOp));
+const cosig = (name, key) => ({ name, signedNote: cp.sign(s5.size, s5.root, key) });
+const C1 = cosig('kimi1', privPem);
+const C2 = cosig('z-worker', priv(kpW2));
+const C3 = cosig('casey', priv(kpW3));
+
+pin('strict-majority bound: n=3,m=0 -> k=2; n=3,m=1 -> k=3', () => {
+  assert.strictEqual(qu.requiredCosigners(3, 0), 2);
+  assert.strictEqual(qu.requiredCosigners(3, 1), 3);
+  assert.strictEqual(qu.requiredCosigners(7, 2), 5);
+  assert.strictEqual(policy3.k, 2);
+});
+pin('loadPolicy accepts the design-doc policy shape', () => {
+  assert.strictEqual(policy3.name, 'fleet-wal-prod');
+  assert.strictEqual(policy3.n, 3);
+  assert.strictEqual(policy3.logPubPem, pem(kpOp));
+});
+pin('loadPolicy REFUSES k below the strict-majority floor (not trusted)', () => {
+  assert.throws(() => qu.loadPolicy({
+    name: 'p', origin: cp.ORIGIN,
+    witnesses: [
+      { name: 'a', ed25519: pubPem }, { name: 'b', ed25519: pem(kpW2) },
+      { name: 'c', ed25519: pem(kpW3) }, { name: 'd', ed25519: pem(kpOp) }, { name: 'e', ed25519: pubPem2 },
+    ],
+    quorum: { kind: 'k-of-n', k: 2, n: 5 }, // floor for n=5 is 3
+  }), /floor/);
+});
+pin('loadPolicy REFUSES duplicate witness names', () => {
+  assert.throws(() => qu.loadPolicy({
+    name: 'p', origin: cp.ORIGIN,
+    witnesses: [{ name: 'x', ed25519: pubPem }, { name: 'x', ed25519: pem(kpW2) }],
+    quorum: { kind: 'k-of-n', k: 2, n: 2 }, // floor for n=2 is 2
+  }), /duplicate/);
+});
+pin('loadPolicy REFUSES foreign origin', () => {
+  assert.throws(() => qu.loadPolicy({
+    name: 'p', origin: 'evil/origin', witnesses: [{ name: 'x', ed25519: pubPem }],
+    quorum: { kind: 'k-of-n', k: 1, n: 1 },
+  }), /origin/);
+});
+pin('loadPolicy REFUSES quorum.n diverging from witness count', () => {
+  assert.throws(() => qu.loadPolicy({
+    name: 'p', origin: cp.ORIGIN,
+    witnesses: [{ name: 'x', ed25519: pubPem }, { name: 'y', ed25519: pem(kpW2) }],
+    quorum: { kind: 'k-of-n', k: 2, n: 3 },
+  }), /!= witness count/);
+});
+pin('quorum ACCEPTS 2-of-3 valid distinct cosigs + operator sig', () => {
+  const v = qu.quorum(full, opNote, [C1, C2], policy3);
+  assert.strictEqual(v.ok, true);
+  assert.strictEqual(v.reason, 'quorum');
+  assert.strictEqual(v.valid, 2);
+  assert.strictEqual(v.k, 2);
+  assert.ok(v.digest.equals(s5.digest));
+});
+pin('quorum REFUSES 1-of-3 (below strict majority), names the gap', () => {
+  const v = qu.quorum(full, opNote, [C1], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'insufficient');
+  assert.strictEqual(v.valid, 1);
+  assert.strictEqual(v.k, 2);
+});
+pin('quorum counts a witness ONCE (duplicate submissions never a quorum)', () => {
+  const v = qu.quorum(full, opNote, [C1, C1, C1], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.valid, 1);
+});
+pin('quorum fail-closed on unrecognized-key (verified cosig NOT in policy)', () => {
+  const kpRogue = require('crypto').generateKeyPairSync('ed25519');
+  const rogue = cosig('rogue', priv(kpRogue));
+  const v = qu.quorum(full, opNote, [C1, rogue], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.valid, 1);
+  assert.ok(v.problems.some((p) => p.name === 'rogue' && p.reason === 'unrecognized-key'));
+});
+pin('quorum REFUSES unsigned witness notes (never counted toward k)', () => {
+  const v = qu.quorum(full, opNote, [C1, { name: 'z-worker', signedNote: s5.note }], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.valid, 1);
+  assert.ok(v.problems.some((p) => p.reason === 'unsigned'));
+});
+pin('quorum REFUSES unsigned operator note when policy names a log key', () => {
+  const v = qu.quorum(full, s5.note, [C1, C2], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'unsigned-operator');
+});
+pin('quorum REFUSES operator note signed by the wrong key', () => {
+  const wrongKey = cp.sign(s5.size, s5.root, privPem); // not the policy log key
+  const v = qu.quorum(full, wrongKey, [C1, C2], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'bad-operator-signature');
+});
+pin('FORK: two valid cosigs over different roots at same size -> conflict (409-class)', () => {
+  const tampered = full.slice(); tampered[2] = 'LINK step TWO (forked)';
+  const forkSeal = cp.seal(tampered);
+  assert.strictEqual(forkSeal.size, s5.size); // premise: same size, different root
+  const forkSigned = cp.sign(forkSeal.size, forkSeal.root, priv(kpW2));
+  const v = qu.quorum(full, opNote, [C1, { name: 'z-worker', signedNote: forkSigned }], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'conflict');
+});
+pin('quorum attesting a root the local ledger does not re-seal -> conflict (persist-before-cosign mirror)', () => {
+  // witnesses honestly cosign a SAME-SIZE forked ledger; caller presents the real rows
+  const forked = full.slice(); forked[2] = 'LINK step TWO (forked ledger)';
+  const fSeal = cp.seal(forked);
+  assert.strictEqual(fSeal.size, s5.size);
+  const honest = [
+    { name: 'kimi1', signedNote: cp.sign(fSeal.size, fSeal.root, privPem) },
+    { name: 'z-worker', signedNote: cp.sign(fSeal.size, fSeal.root, priv(kpW2)) },
+  ];
+  const v = qu.quorum(full, opNote, honest, policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'conflict');
+});
+pin('operator note not attesting local seal -> conflict (caller lied about its own ledger)', () => {
+  const forked = full.slice(); forked[2] = 'LINK step TWO (forked ledger)';
+  const fSeal = cp.seal(forked);
+  const opLie = cp.sign(fSeal.size, fSeal.root, priv(kpOp));
+  const v = qu.quorum(full, opLie, [C1, C2], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'conflict');
+});
+pin('size disagreement from a witness -> malformed (422-class), named', () => {
+  const wrongSize = cp.sign(3, cp.seal(full.slice(0, 3)).root, priv(kpW2));
+  const v = qu.quorum(full, opNote, [C1, { name: 'z-worker', signedNote: wrongSize }], policy3);
+  assert.strictEqual(v.ok, false);
+  assert.ok(v.problems.some((p) => p.name === 'z-worker' && p.reason === 'malformed'));
+});
+pin('3-of-3 (k=3,n=3) policy ACCEPTS only when all three agree', () => {
+  const pol = qu.loadPolicy({
+    name: 'fleet-wal-strict', origin: cp.ORIGIN,
+    log: { ed25519: pem(kpOp) },
+    witnesses: [
+      { name: 'kimi1', ed25519: pubPem },
+      { name: 'z-worker', ed25519: pem(kpW2) },
+      { name: 'casey', ed25519: pem(kpW3) },
+    ],
+    quorum: { kind: 'k-of-n', k: 3, n: 3 },
+  });
+  assert.strictEqual(qu.quorum(full, opNote, [C1, C2], pol).ok, false);
+  const v = qu.quorum(full, opNote, [C1, C2, C3], pol);
+  assert.strictEqual(v.ok, true);
+  assert.strictEqual(v.valid, 3);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

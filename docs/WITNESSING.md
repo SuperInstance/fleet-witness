@@ -9,7 +9,7 @@ Lane: study → build. Author: snowball pulse.
 |---|---|---|
 | L1 Merkleize | **built (this repo, v0)** | RFC 6962 root over WAL rows; checkpoint binds size+root |
 | L2 anchor | build next window | checkpoint note committed into a witness repo's git history + digest embedded in sibling repos' next sealed receipts — two trust-domain channels we already operate |
-| L3 witness quorum | designed-not-built | n=3 witnesses across 3 trust domains (kimi1 host, z-worker, Casey), k=2 per strict-majority bound t ≥ ⌈(n+m+1)/2⌉ (transparency.dev 2026); C2SP tlog-policy-shaped policy file |
+| L3 witness quorum | **mechanism built (this repo, v0.2)** — client-side check only; witness daemons still design-gated | n=3 witnesses across 3 trust domains (kimi1 host, z-worker, Casey), k=2 per strict-majority bound t ≥ ⌈(n+m+1)/2⌉ (transparency.dev 2026); C2SP tlog-policy-shaped policy file |
 | L4 TSA | rejected | fleet receipts don't need third-party wall-clock; moat is append-only proof, not trusted time |
 
 ## Key external readings
@@ -26,7 +26,7 @@ Lane: study → build. Author: snowball pulse.
 
 1. `src/tree.js` — RFC 6962 root + consistency proofs, pinned vs vectors ✅ (this window)
 2. `src/checkpoint.js` — C2SP-shaped note + Ed25519 sig seam ✅ (this window, sig seam documented)
-3. `src/anchor.js` — git witness-repo channel + sibling-seal digest channel, FAIL-first:
-   truncated WAL passes L0, fails anchored-checkpoint compare ← **next window**
-4. `src/truncate-demo.js` — standalone sales artifact driving the whole story ← after anchor
-5. Pins: vectors, truncation catch, cross-channel agree ← vectors + truncation landed
+3. `src/anchor.js` — git witness-repo channel + sibling-seal digest channel ✅ (merged #6/#1/#3)
+4. `src/quorum.js` — L3 witness quorum: client-side named policy, strict-majority bound, persist-before-cosign, fork=conflict (409-class) ✅ (this window)
+5. `src/truncate-demo.js` — standalone sales artifact driving the whole story ← next window
+6. Pins: vectors, truncation catch, cross-channel agree ← vectors + truncation landed
