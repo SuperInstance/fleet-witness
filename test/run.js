@@ -161,6 +161,15 @@ pin('anchor: notes.log is append-only across re-anchors', () => {
   const log = fs.readFileSync(path.join(repo, 'checkpoints', 'demo', 'notes.log'), 'utf8');
   assert.strictEqual((log.match(/superinstance\/fleet-wal\/v1/g) || []).length, 2);
 });
+pin('anchor: stray untracked file in witness repo is NOT swept into the anchor commit', () => {
+  const repo = freshWitnessRepo();
+  fs.writeFileSync(path.join(repo, 'editor-temp.txt'), 'stray');
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const status = execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' });
+  assert.ok(/^\?\? editor-temp\.txt$/m.test(status), 'stray file must remain untracked, got: ' + status.trim());
+  const files = execFileSync('git', ['-C', repo, 'ls-files'], { encoding: 'utf8' });
+  assert.ok(!/editor-temp\.txt/.test(files), 'stray file must not be committed');
+});
 
 // --- truncate-demo pins (the sales artifact: L0 silent, L1 catches) ---
 pin('demo: runDemo returns all three cases', () => {
