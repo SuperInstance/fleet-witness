@@ -111,5 +111,41 @@ pin('digest == SHA-256 of note body (anchor channel invariant)', () => {
   assert.ok(d.equals(s5.digest));
 });
 
+// --- L3 quorum design pins (doc-text pins, FAIL-first: all red on main where the doc is absent) ---
+const fs = require('fs');
+const path = require('path');
+const l3doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'L3-QUORUM.md'), 'utf8');
+pin('L3-QUORUM.md design doc exists', () => {
+  assert.ok(l3doc.length > 2000);
+});
+pin('L3 operating point recorded: n=3 witnesses, k=2 cosigs', () => {
+  assert.match(l3doc, /n = 3 witnesses across 3 trust domains/);
+  assert.match(l3doc, /k = 2 cosigs required/);
+});
+pin('L3 strict-majority bound recorded, not simple majority', () => {
+  assert.match(l3doc, /t ≥ ⌈\(n \+ m \+ 1\) \/ 2⌉/);
+  assert.match(l3doc, /not a simple majority|NOT a simple majority/i);
+});
+pin('L3 policy file shape: origin + log key + witness keys + quorum', () => {
+  for (const field of ['"origin"', '"log"', '"witnesses"', '"quorum"', '"k-of-n"']) {
+    assert.ok(l3doc.includes(field), `policy shape missing ${field}`);
+  }
+});
+pin('L3 Nous honesty rule: no witnessing claim without on-disk cosig', () => {
+  assert.match(l3doc, /mechanism ≠ witnessing/);
+  assert.match(l3doc, /Nous/);
+});
+pin('L4 TSA rejection recorded (study verdict kept)', () => {
+  assert.match(l3doc, /L4 TSA.*?: rejected|Trusted time \(L4 TSA\): rejected/s);
+});
+pin('L3 fail-closed semantics stated (freezing, not convergence)', () => {
+  assert.match(l3doc, /fail closed/);
+  assert.match(l3doc, /freezing/, 'split-view without monitors is freezing, not convergence');
+});
+pin('L3 build gate stated (extraction #4 + two always-on hosts)', () => {
+  assert.match(l3doc, /extraction #4/);
+  assert.match(l3doc, /always-on daemons/);
+});
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
