@@ -276,5 +276,71 @@ pin('L3 build gate stated (extraction #4 + two always-on hosts)', () => {
 });
 
 
+// --- Ed25519 signer seam (v0.1) ---
+// Keys generated in-test (never the fleet key — CI must not depend on
+// ~/.config/fleet-witness); PEM shape matches the fleet keypair exactly.
+const kp = require('crypto').generateKeyPairSync('ed25519');
+const privPem = kp.privateKey.export({ type: 'pkcs8', format: 'pem' });
+const pubPem = kp.publicKey.export({ type: 'spki', format: 'pem' });
+const kp2 = require('crypto').generateKeyPairSync('ed25519');
+const pubPem2 = kp2.publicKey.export({ type: 'spki', format: 'pem' });
+
+const signed = cp.sign(s5.size, s5.root, privPem);
+
+pin('sign appends sig line after the body', () => {
+  const lines = signed.split('\n');
+  assert.strictEqual(lines[3].slice(0, 4), 'sig:');
+  assert.strictEqual(lines.length, 5);
+  assert.strictEqual(signed.slice(0, s5.note.length), s5.note); // body untouched
+});
+pin('signed note parses as signed with extracted sig', () => {
+  const p = cp.parse(signed);
+  assert.strictEqual(p.signed, true);
+  assert.strictEqual(p.size, 5);
+  assert.ok(p.root.equals(s5.root));
+  assert.ok(p.sig.length === 64); // raw Ed25519
+  assert.strictEqual(p.body, s5.note);
+});
+pin('unsigned note parses signed:false (honest, not an error)', () => {
+  assert.strictEqual(cp.parse(s5.note).signed, false);
+});
+pin('verify ACCEPTS genuine signed note', () => {
+  const v = cp.verify(signed, pubPem);
+  assert.strictEqual(v.ok, true);
+  assert.strictEqual(v.size, 5);
+});
+pin('verify REJECTS body tamper under valid sig', () => {
+  const lines = signed.split('\n');
+  lines[1] = '999'; // size lie, sig untouched
+  assert.strictEqual(cp.verify(lines.join('\n'), pubPem).ok, false);
+});
+pin('verify REJECTES sig from a different key', () => {
+  assert.strictEqual(cp.verify(signed, pubPem2).ok, false);
+});
+pin('sig line never enters the anchored digest (channel invariant)', () => {
+  const p = cp.parse(signed);
+  const bodyDigest = require('crypto').createHash('sha256').update(p.body).digest();
+  assert.ok(bodyDigest.equals(s5.digest)); // anchor binds body only
+});
+pin('verify(unsigned) reports ok:false reason unsigned', () => {
+  const v = cp.verify(s5.note, pubPem);
+  assert.strictEqual(v.ok, false);
+  assert.strictEqual(v.reason, 'unsigned');
+});
+pin('parse rejects junk line after sig line (strict shape)', () => {
+  assert.throws(() => cp.parse(signed + 'THIS IS JUNK\n'));
+});
+pin('parse rejects extra line in unsigned note (strict shape)', () => {
+  assert.throws(() => cp.parse(s5.note + 'extra line\n'));
+});
+pin('parse rejects junk-before-sig shapes (sig is line 4, nothing between)', () => {
+  const sigLine = signed.split('\n')[3];
+  assert.throws(() => cp.parse(s5.note + 'junkline\n' + sigLine + '\n'));
+});
+pin('verify still catches junk-after-sig (via strict parse, not sig check)', () => {
+  assert.throws(() => cp.verify(signed + 'JUNK\n', pubPem));
+});
+
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
