@@ -12,6 +12,7 @@ const { execFileSync } = require('child_process');
 const tree = require('../src/tree.js');
 const cp = require('../src/checkpoint.js');
 const anchor = require('../src/anchor.js');
+const emb = require('../src/embedding.js');
 
 let pass = 0, fail = 0;
 function pin(name, fn) {
@@ -115,6 +116,76 @@ pin('digest == SHA-256 of note body (anchor channel invariant)', () => {
   const d = require('crypto').createHash('sha256').update(s5.note).digest();
   assert.ok(d.equals(s5.digest));
 });
+
+// --- channel (b): sibling-seal digest embedding ---
+const embedRow = emb.embedRow(s5);
+
+pin('embedRow shape: BIND witness-anchor origin size digest, one line', () => {
+  assert.ok(!embedRow.includes('\n'));
+  assert.ok(embedRow.startsWith('BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest='));
+  assert.strictEqual(embedRow.length, 'BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest='.length + 64);
+});
+pin('embedRow digest = independent SHA-256 of note body', () => {
+  const d = require('crypto').createHash('sha256').update(s5.note).digest('hex');
+  assert.ok(embedRow.endsWith(d));
+});
+pin('verifyRow accepts genuine (row, note) pair', () => {
+  const v = emb.verifyRow(embedRow, s5.note);
+  assert.ok(v.ok);
+  assert.strictEqual(v.size, 5);
+});
+pin('verifyRow CATCHES truncated sibling (row binds size 5, note says 3)', () => {
+  const t = cp.seal(full.slice(0, 3));
+  const v = emb.verifyRow(embedRow, t.note);
+  assert.ok(!v.ok);
+  assert.strictEqual(v.reason, 'size-mismatch');
+});
+pin('verifyRow CATCHES forged note with row digest kept (digest-mismatch)', () => {
+  const tampered = cp.seal(full.slice().map((r, i) => (i === 1 ? r + ' (forged)' : r)));
+  const v = emb.verifyRow(embedRow, tampered.note);
+  assert.ok(!v.ok);
+  assert.strictEqual(v.reason, 'digest-mismatch');
+});
+pin('parseRow rejects foreign origin', () => {
+  assert.throws(() => emb.parseRow('BIND witness-anchor origin=evil size=5 digest=' + 'ab'.repeat(32)));
+});
+pin('parseRow rejects uppercase digest hex (strict lowercase)', () => {
+  assert.throws(() => emb.parseRow('BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest=' + 'AB'.repeat(32)));
+});
+pin('parseRow rejects multi-line row (WAL row injection guard)', () => {
+  assert.throws(() => emb.parseRow(embedRow + '\nLINK injected'));
+});
+pin('embedRow works on empty ledger (size 0 edge)', () => {
+  const s0 = cp.seal([]);
+  const r = emb.embedRow(s0);
+  const v = emb.verifyRow(r, s0.note);
+  assert.ok(v.ok);
+  assert.strictEqual(v.size, 0);
+});
+pin('embedding row is an ordinary WAL row (extends L0 chain, byte-stable)', () => {
+  const withEmb = full.concat([embedRow]);
+  const h1 = l0chain(withEmb);
+  const h2 = l0chain(withEmb);
+  assert.deepStrictEqual(h1, h2); // fnv1a chain deterministic over embedded row
+  assert.ok(l0verify(withEmb, h1));
+});
+pin('verifyRow ACCEPTS signed witness note (sig line never enters the anchored digest)', () => {
+  // channel (b) consumers will receive signed notes once the signer seam is
+  // filled; the row digest anchors the note BODY, so the sig line must not
+  // break the recompute. Sig shape faked locally — no signer dependency here.
+  // (Byte-drift beyond the sig seam is cp.parse's strict-shape job, not
+  // verifyRow's — notes are byte-canonical per the signer-seam branch.)
+  const signedNote = s5.note + 'sig:' + Buffer.alloc(64, 0x41).toString('base64') + '\n';
+  const v = emb.verifyRow(embedRow, signedNote);
+  assert.ok(v.ok, 'signed note must verify: ' + JSON.stringify(v));
+});
+pin('parseRow rejects unknown extra fields (strict shape, no drift)', () => {
+  assert.throws(() => emb.parseRow(embedRow + ' attackernote=x'));
+});
+pin('parseRow rejects duplicate fields (no last-wins ambiguity)', () => {
+  assert.throws(() => emb.parseRow(embedRow.replace('size=5', 'size=99 size=5')));
+});
+
 
 // --- L2 anchor channel: witness-repo git anchoring (window 2) ---
 function freshWitnessRepo() {

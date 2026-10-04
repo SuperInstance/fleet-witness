@@ -20,6 +20,13 @@ Zero-dep stdlib Node, standalone-extraction style (mirrors SuperInstance/coev).
   documented seam — the fleet signing key lives outside this repo; **no
   "witnessing" is claimed until a real external cosig exists on disk**
   (Nous v5.67 erratum, adopted as an honesty rule in the study).
+- `src/embedding.js` — channel (b): a sibling ledger appends ONE ordinary WAL
+  row (`BIND witness-anchor origin=… size=<n> digest=<sha256 of note body>`)
+  binding its ledger to an anchored checkpoint. `verifyRow(row, note)`
+  re-derives the digest from a presented note and catches sibling-side
+  truncation (size-mismatch) and forged notes (digest-mismatch). Provenance
+  of the note stays channel (a)'s job — embedding alone binds, it does not
+  witness.
 
 ## The demo in one breath
 
@@ -48,6 +55,8 @@ node test/run.js
 
 ## Status
 
-v0.1.0 — tree + checkpoint core, 16 pins green. Anchor channels (witness-repo git
-commit + sibling-seal digest embedding) are the next window. L3 policy file
-designed in the study, not built.
+v0.1.0 — tree + checkpoint core, 16 pins green. v0.2.0 (open PRs): L2 anchor
+channel (a) witness-repo git anchoring (#1), truncate-demo sales artifact (#2),
+channel (b) sibling-seal digest embedding (#3, this branch is independent of
+#1/#2 — rebase expected on merge of either). Remaining: Ed25519 sig seam on
+canonical notes; L3 quorum designed in the study, not built.
