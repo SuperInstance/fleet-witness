@@ -132,3 +132,9 @@ witness network.
 Remaining build order: witness service (fetch → consistency-verify → persist →
 cosign, one file per origin) → cross-host drill: freeze one witness, verify the
 remaining two keep quorum live and the frozen one's clients fail closed.
+
+## Pristine-run receipt (fresh-audit v0, canonical tool quilt-tools#45)
+
+- 2026-10-05 07:56 CST snowball pulse: `node tools/fresh-audit/fresh-audit.mjs SuperInstance/fleet-witness 7`
+  → fresh clone of head `l3-quorum` (c21cb39): runner test/run.js PASS — 75 passed, 0 failed;
+  verdict: all discovered runners GREEN in fresh clone. No phantom-RED class on this PR.
