@@ -5,8 +5,13 @@
 // (vectors below), not copied between implementations unchecked.
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
 const tree = require('../src/tree.js');
 const cp = require('../src/checkpoint.js');
+const anchor = require('../src/anchor.js');
 
 let pass = 0, fail = 0;
 function pin(name, fn) {
@@ -109,6 +114,51 @@ pin('parse rejects foreign origin', () => {
 pin('digest == SHA-256 of note body (anchor channel invariant)', () => {
   const d = require('crypto').createHash('sha256').update(s5.note).digest();
   assert.ok(d.equals(s5.digest));
+});
+
+// --- L2 anchor channel: witness-repo git anchoring (window 2) ---
+function freshWitnessRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fw-witness-'));
+  execFileSync('git', ['init', '-q', dir]);
+  const run = (args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' });
+  run(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  return dir;
+}
+pin('anchor: fresh anchor verifies from git history', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const v = anchor.audit(repo, 'demo', 5, cp.seal(full).root);
+  assert.ok(v.ok, JSON.stringify(v));
+});
+pin('anchor: truncation to 3 CAUGHT (size pin)', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const t = full.slice(0, 3);
+  assert.ok(!anchor.audit(repo, 'demo', 3, cp.seal(t).root).ok);
+});
+pin('anchor: ROLLBACK to old valid state CAUGHT (chains fine at L0, size pin rejects)', () => {
+  const grown = full.concat(['LINK step SIX', 'LINK step SEVEN']);
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  anchor.anchor(repo, 'demo', cp.seal(grown).note);
+  const v7 = anchor.audit(repo, 'demo', 7, cp.seal(grown).root);
+  assert.ok(v7.ok, JSON.stringify(v7));
+  // attacker presents the OLD full-5 state: valid rows, valid L0 chain, wrong era
+  assert.ok(!anchor.audit(repo, 'demo', 5, cp.seal(full).root).ok);
+});
+pin('anchor: forged LATEST CAUGHT (root mismatch)', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const forged = cp.note(5, Buffer.alloc(32, 0x41));
+  fs.writeFileSync(path.join(repo, 'checkpoints', 'demo', 'LATEST'), forged);
+  assert.ok(!anchor.audit(repo, 'demo', 5, cp.seal(full).root).ok);
+});
+pin('anchor: notes.log is append-only across re-anchors', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  anchor.anchor(repo, 'demo', cp.seal(full.concat(['X'])).note);
+  const log = fs.readFileSync(path.join(repo, 'checkpoints', 'demo', 'notes.log'), 'utf8');
+  assert.strictEqual((log.match(/superinstance\/fleet-wal\/v1/g) || []).length, 2);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
