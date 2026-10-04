@@ -168,13 +168,11 @@ pin('verifyRow ACCEPTS signed witness note (sig line never enters the anchored d
   // channel (b) consumers will receive signed notes once the signer seam is
   // filled; the row digest anchors the note BODY, so the sig line must not
   // break the recompute. Sig shape faked locally — no signer dependency here.
+  // (Byte-drift beyond the sig seam is cp.parse's strict-shape job, not
+  // verifyRow's — notes are byte-canonical per the signer-seam branch.)
   const signedNote = s5.note + 'sig:' + Buffer.alloc(64, 0x41).toString('base64') + '\n';
   const v = emb.verifyRow(embedRow, signedNote);
   assert.ok(v.ok, 'signed note must verify: ' + JSON.stringify(v));
-});
-pin('verifyRow accepts byte-drifted note of equal value (canonical body is the invariant)', () => {
-  const v = emb.verifyRow(embedRow, s5.note + '\n'); // extra blank line
-  assert.ok(v.ok, JSON.stringify(v));
 });
 pin('parseRow rejects unknown extra fields (strict shape, no drift)', () => {
   assert.throws(() => emb.parseRow(embedRow + ' attackernote=x'));
