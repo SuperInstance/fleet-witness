@@ -43,11 +43,13 @@ pinned, not narrated.
 ## Run
 
 ```
-node test/run.js
+node test/run.js        # pins
+node demo/truncate-demo.js  # the sales artifact, live
 ```
 
 ## Status
 
-v0.1.0 — tree + checkpoint core, 16 pins green. Anchor channels (witness-repo git
-commit + sibling-seal digest embedding) are the next window. L3 policy file
+v0.2.0 — tree + checkpoint core + L2 anchor channel (witness-repo git anchoring,
+rollback caught) + truncate-demo sales artifact, 26 pins green. L2 channel (b)
+sibling-seal digest embedding is the next window. L3 policy file
 designed in the study, not built.
