@@ -31,7 +31,9 @@ function anchor(witnessRepoDir, ledgerName, noteText, opts = {}) {
   fs.writeFileSync(path.join(dir, 'notes.log'), noteText, { flag: 'a' });
   fs.writeFileSync(path.join(dir, 'LATEST'), noteText);
   const run = (args) => execFileSync('git', ['-C', witnessRepoDir, ...args], { stdio: 'pipe' });
-  run(['add', '.']);
+  // scope the anchor commit to the checkpoints tree only: an anchor must not
+  // sweep unrelated uncommitted state in the witness repo into history.
+  run(['add', '--', 'checkpoints']);
   const idArgs = opts.name ? ['-c', `user.name=${opts.name}`, '-c', `user.email=${opts.email}`] : [];
   run([...idArgs, 'commit', '-m', `anchor: ${slugify(ledgerName)} checkpoint`]);
   return path.join(dir, 'LATEST');
