@@ -30,6 +30,10 @@ function embedRow(sealed) {
 }
 
 // Strict parse of an embedding row; throws on any shape drift.
+// Strict means strict: exactly origin=, size=, digest= — unknown fields and
+// duplicate fields both throw (no last-wins ambiguity, no drift-tolerant
+// accept, per the fail-first pins).
+const KNOWN_FIELDS = ['origin', 'size', 'digest'];
 function parseRow(row) {
   if (typeof row !== 'string' || row.includes('\n')) throw new Error('row must be one line');
   const parts = row.split(' ');
@@ -38,8 +42,12 @@ function parseRow(row) {
   for (const f of parts.slice(2)) {
     const eq = f.indexOf('=');
     if (eq < 1) throw new Error('bad field: ' + f);
-    fields[f.slice(0, eq)] = f.slice(eq + 1);
+    const key = f.slice(0, eq);
+    if (!KNOWN_FIELDS.includes(key)) throw new Error('unknown field: ' + key);
+    if (key in fields) throw new Error('duplicate field: ' + key);
+    fields[key] = f.slice(eq + 1);
   }
+  for (const k of KNOWN_FIELDS) if (!(k in fields)) throw new Error('missing field: ' + k);
   if (fields.origin !== cp.ORIGIN) throw new Error('origin mismatch: ' + fields.origin);
   const size = Number(fields.size);
   if (!Number.isSafeInteger(size) || size < 0) throw new Error('bad size: ' + fields.size);
@@ -51,11 +59,16 @@ function parseRow(row) {
 // fetched from wherever the verifier trusts — normally the witness-repo
 // anchor channel). Recomputes the digest from the note; never trusts the
 // row's digest field alone.
+// The digest anchors the note BODY (canonical "origin\nsize\nroot\n"), so it
+// is recomputed over the canonical body of the parsed note — a sig line
+// appended by the signer seam (or byte-drift like a trailing blank line)
+// must not break verification. Values are still strictly parsed.
 function verifyRow(row, noteText) {
   const f = parseRow(row);
   const n = cp.parse(noteText); // strict note shape; throws on drift
   if (n.size !== f.size) return { ok: false, reason: 'size-mismatch', rowSize: f.size, noteSize: n.size };
-  const recomputed = crypto.createHash('sha256').update(noteText).digest('hex');
+  const canonicalBody = cp.note(n.size, n.root);
+  const recomputed = crypto.createHash('sha256').update(canonicalBody).digest('hex');
   if (recomputed !== f.digest) return { ok: false, reason: 'digest-mismatch' };
   return { ok: true, size: f.size, digest: f.digest };
 }

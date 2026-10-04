@@ -164,6 +164,24 @@ pin('embedding row is an ordinary WAL row (extends L0 chain, byte-stable)', () =
   assert.deepStrictEqual(h1, h2); // fnv1a chain deterministic over embedded row
   assert.ok(l0verify(withEmb, h1));
 });
+pin('verifyRow ACCEPTS signed witness note (sig line never enters the anchored digest)', () => {
+  // channel (b) consumers will receive signed notes once the signer seam is
+  // filled; the row digest anchors the note BODY, so the sig line must not
+  // break the recompute. Sig shape faked locally — no signer dependency here.
+  const signedNote = s5.note + 'sig:' + Buffer.alloc(64, 0x41).toString('base64') + '\n';
+  const v = emb.verifyRow(embedRow, signedNote);
+  assert.ok(v.ok, 'signed note must verify: ' + JSON.stringify(v));
+});
+pin('verifyRow accepts byte-drifted note of equal value (canonical body is the invariant)', () => {
+  const v = emb.verifyRow(embedRow, s5.note + '\n'); // extra blank line
+  assert.ok(v.ok, JSON.stringify(v));
+});
+pin('parseRow rejects unknown extra fields (strict shape, no drift)', () => {
+  assert.throws(() => emb.parseRow(embedRow + ' attackernote=x'));
+});
+pin('parseRow rejects duplicate fields (no last-wins ambiguity)', () => {
+  assert.throws(() => emb.parseRow(embedRow.replace('size=5', 'size=99 size=5')));
+});
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
