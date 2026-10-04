@@ -5,8 +5,14 @@
 // (vectors below), not copied between implementations unchecked.
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { execFileSync } = require('child_process');
 const tree = require('../src/tree.js');
 const cp = require('../src/checkpoint.js');
+const anchor = require('../src/anchor.js');
+const emb = require('../src/embedding.js');
 
 let pass = 0, fail = 0;
 function pin(name, fn) {
@@ -111,9 +117,131 @@ pin('digest == SHA-256 of note body (anchor channel invariant)', () => {
   assert.ok(d.equals(s5.digest));
 });
 
+// --- channel (b): sibling-seal digest embedding ---
+const embedRow = emb.embedRow(s5);
+
+pin('embedRow shape: BIND witness-anchor origin size digest, one line', () => {
+  assert.ok(!embedRow.includes('\n'));
+  assert.ok(embedRow.startsWith('BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest='));
+  assert.strictEqual(embedRow.length, 'BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest='.length + 64);
+});
+pin('embedRow digest = independent SHA-256 of note body', () => {
+  const d = require('crypto').createHash('sha256').update(s5.note).digest('hex');
+  assert.ok(embedRow.endsWith(d));
+});
+pin('verifyRow accepts genuine (row, note) pair', () => {
+  const v = emb.verifyRow(embedRow, s5.note);
+  assert.ok(v.ok);
+  assert.strictEqual(v.size, 5);
+});
+pin('verifyRow CATCHES truncated sibling (row binds size 5, note says 3)', () => {
+  const t = cp.seal(full.slice(0, 3));
+  const v = emb.verifyRow(embedRow, t.note);
+  assert.ok(!v.ok);
+  assert.strictEqual(v.reason, 'size-mismatch');
+});
+pin('verifyRow CATCHES forged note with row digest kept (digest-mismatch)', () => {
+  const tampered = cp.seal(full.slice().map((r, i) => (i === 1 ? r + ' (forged)' : r)));
+  const v = emb.verifyRow(embedRow, tampered.note);
+  assert.ok(!v.ok);
+  assert.strictEqual(v.reason, 'digest-mismatch');
+});
+pin('parseRow rejects foreign origin', () => {
+  assert.throws(() => emb.parseRow('BIND witness-anchor origin=evil size=5 digest=' + 'ab'.repeat(32)));
+});
+pin('parseRow rejects uppercase digest hex (strict lowercase)', () => {
+  assert.throws(() => emb.parseRow('BIND witness-anchor origin=superinstance/fleet-wal/v1 size=5 digest=' + 'AB'.repeat(32)));
+});
+pin('parseRow rejects multi-line row (WAL row injection guard)', () => {
+  assert.throws(() => emb.parseRow(embedRow + '\nLINK injected'));
+});
+pin('embedRow works on empty ledger (size 0 edge)', () => {
+  const s0 = cp.seal([]);
+  const r = emb.embedRow(s0);
+  const v = emb.verifyRow(r, s0.note);
+  assert.ok(v.ok);
+  assert.strictEqual(v.size, 0);
+});
+pin('embedding row is an ordinary WAL row (extends L0 chain, byte-stable)', () => {
+  const withEmb = full.concat([embedRow]);
+  const h1 = l0chain(withEmb);
+  const h2 = l0chain(withEmb);
+  assert.deepStrictEqual(h1, h2); // fnv1a chain deterministic over embedded row
+  assert.ok(l0verify(withEmb, h1));
+});
+pin('verifyRow ACCEPTS signed witness note (sig line never enters the anchored digest)', () => {
+  // channel (b) consumers will receive signed notes once the signer seam is
+  // filled; the row digest anchors the note BODY, so the sig line must not
+  // break the recompute. Sig shape faked locally — no signer dependency here.
+  // (Byte-drift beyond the sig seam is cp.parse's strict-shape job, not
+  // verifyRow's — notes are byte-canonical per the signer-seam branch.)
+  const signedNote = s5.note + 'sig:' + Buffer.alloc(64, 0x41).toString('base64') + '\n';
+  const v = emb.verifyRow(embedRow, signedNote);
+  assert.ok(v.ok, 'signed note must verify: ' + JSON.stringify(v));
+});
+pin('parseRow rejects unknown extra fields (strict shape, no drift)', () => {
+  assert.throws(() => emb.parseRow(embedRow + ' attackernote=x'));
+});
+pin('parseRow rejects duplicate fields (no last-wins ambiguity)', () => {
+  assert.throws(() => emb.parseRow(embedRow.replace('size=5', 'size=99 size=5')));
+});
+
+
+// --- L2 anchor channel: witness-repo git anchoring (window 2) ---
+function freshWitnessRepo() {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fw-witness-'));
+  execFileSync('git', ['init', '-q', dir]);
+  const run = (args) => execFileSync('git', ['-C', dir, ...args], { stdio: 'pipe' });
+  run(['-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '--allow-empty', '-m', 'init']);
+  return dir;
+}
+pin('anchor: fresh anchor verifies from git history', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const v = anchor.audit(repo, 'demo', 5, cp.seal(full).root);
+  assert.ok(v.ok, JSON.stringify(v));
+});
+pin('anchor: truncation to 3 CAUGHT (size pin)', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const t = full.slice(0, 3);
+  assert.ok(!anchor.audit(repo, 'demo', 3, cp.seal(t).root).ok);
+});
+pin('anchor: ROLLBACK to old valid state CAUGHT (chains fine at L0, size pin rejects)', () => {
+  const grown = full.concat(['LINK step SIX', 'LINK step SEVEN']);
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  anchor.anchor(repo, 'demo', cp.seal(grown).note);
+  const v7 = anchor.audit(repo, 'demo', 7, cp.seal(grown).root);
+  assert.ok(v7.ok, JSON.stringify(v7));
+  // attacker presents the OLD full-5 state: valid rows, valid L0 chain, wrong era
+  assert.ok(!anchor.audit(repo, 'demo', 5, cp.seal(full).root).ok);
+});
+pin('anchor: forged LATEST CAUGHT (root mismatch)', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const forged = cp.note(5, Buffer.alloc(32, 0x41));
+  fs.writeFileSync(path.join(repo, 'checkpoints', 'demo', 'LATEST'), forged);
+  assert.ok(!anchor.audit(repo, 'demo', 5, cp.seal(full).root).ok);
+});
+pin('anchor: notes.log is append-only across re-anchors', () => {
+  const repo = freshWitnessRepo();
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  anchor.anchor(repo, 'demo', cp.seal(full.concat(['X'])).note);
+  const log = fs.readFileSync(path.join(repo, 'checkpoints', 'demo', 'notes.log'), 'utf8');
+  assert.strictEqual((log.match(/superinstance\/fleet-wal\/v1/g) || []).length, 2);
+});
+pin('anchor: stray untracked file in witness repo is NOT swept into the anchor commit', () => {
+  const repo = freshWitnessRepo();
+  fs.writeFileSync(path.join(repo, 'editor-temp.txt'), 'stray');
+  anchor.anchor(repo, 'demo', cp.seal(full).note);
+  const status = execFileSync('git', ['-C', repo, 'status', '--porcelain'], { encoding: 'utf8' });
+  assert.ok(/^\?\? editor-temp\.txt$/m.test(status), 'stray file must remain untracked, got: ' + status.trim());
+  const files = execFileSync('git', ['-C', repo, 'ls-files'], { encoding: 'utf8' });
+  assert.ok(!/editor-temp\.txt/.test(files), 'stray file must not be committed');
+});
+
 // --- L3 quorum design pins (doc-text pins, FAIL-first: all red on main where the doc is absent) ---
-const fs = require('fs');
-const path = require('path');
 const l3doc = fs.readFileSync(path.join(__dirname, '..', 'docs', 'L3-QUORUM.md'), 'utf8');
 pin('L3-QUORUM.md design doc exists', () => {
   assert.ok(l3doc.length > 2000);
@@ -146,6 +274,7 @@ pin('L3 build gate stated (extraction #4 + two always-on hosts)', () => {
   assert.match(l3doc, /extraction #4/);
   assert.match(l3doc, /always-on daemons/);
 });
+
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
