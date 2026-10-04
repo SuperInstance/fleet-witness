@@ -12,6 +12,7 @@ const { execFileSync } = require('child_process');
 const tree = require('../src/tree.js');
 const cp = require('../src/checkpoint.js');
 const anchor = require('../src/anchor.js');
+const demo = require('../demo/truncate-demo.js');
 
 let pass = 0, fail = 0;
 function pin(name, fn) {
@@ -159,6 +160,25 @@ pin('anchor: notes.log is append-only across re-anchors', () => {
   anchor.anchor(repo, 'demo', cp.seal(full.concat(['X'])).note);
   const log = fs.readFileSync(path.join(repo, 'checkpoints', 'demo', 'notes.log'), 'utf8');
   assert.strictEqual((log.match(/superinstance\/fleet-wal\/v1/g) || []).length, 2);
+});
+
+// --- truncate-demo pins (the sales artifact: L0 silent, L1 catches) ---
+pin('demo: runDemo returns all three cases', () => {
+  const d = demo.runDemo();
+  assert.strictEqual(d.c1.l0, true, 'truncated ledger MUST verify at L0 (silent-loss premise)');
+  assert.strictEqual(d.c1.audit.ok, false, 'checkpoint MUST catch truncation');
+  assert.strictEqual(d.c2.l0, false, 'in-place tamper MUST break L0');
+  assert.strictEqual(d.c3.l0, true, 're-sealed forgery MUST verify at L0');
+  assert.strictEqual(d.c3.audit.ok, false, 'checkpoint MUST catch re-sealed forgery');
+});
+pin('demo: CLI exits 0 and prints CATCH lines', () => {
+  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'demo', 'truncate-demo.js')]).toString();
+  assert.ok(/CASE 1 truncation/.test(out) && /CATCH — size mismatch/.test(out), 'truncation catch line missing');
+  assert.ok(/CASE 3 tamper \+ L0 re-seal/.test(out) && /CATCH — root mismatch/.test(out), 're-seal catch line missing');
+});
+pin('demo: audit size-mismatch reason names both sizes', () => {
+  const d = demo.runDemo();
+  assert.ok(/note 6, ledger 3/.test(d.c1.audit.why), 'honest reason: ' + d.c1.audit.why);
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);
