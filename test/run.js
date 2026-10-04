@@ -162,6 +162,19 @@ pin('verify(unsigned) reports ok:false reason unsigned', () => {
   assert.strictEqual(v.ok, false);
   assert.strictEqual(v.reason, 'unsigned');
 });
+pin('parse rejects junk line after sig line (strict shape)', () => {
+  assert.throws(() => cp.parse(signed + 'THIS IS JUNK\n'));
+});
+pin('parse rejects extra line in unsigned note (strict shape)', () => {
+  assert.throws(() => cp.parse(s5.note + 'extra line\n'));
+});
+pin('parse rejects junk-before-sig shapes (sig is line 4, nothing between)', () => {
+  const sigLine = signed.split('\n')[3];
+  assert.throws(() => cp.parse(s5.note + 'junkline\n' + sigLine + '\n'));
+});
+pin('verify still catches junk-after-sig (via strict parse, not sig check)', () => {
+  assert.throws(() => cp.verify(signed + 'JUNK\n', pubPem));
+});
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

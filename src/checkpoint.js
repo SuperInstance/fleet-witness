@@ -32,11 +32,22 @@ function parse(text) {
   if (!Number.isSafeInteger(size) || size < 0) throw new Error('bad size: ' + lines[1]);
   const root = Buffer.from(lines[2], 'base64');
   if (root.length !== 32) throw new Error('bad root len: ' + root.length);
-  const sigIdx = lines.findIndex((l) => l.startsWith('sig:'));
+  // strict tail: either exactly ["", ] (trailing newline of the unsigned
+  // body) or exactly ["sig:<b64>", ""]. Junk lines before/after the sig
+  // line and extra trailing lines are shape drift and throw — a verified
+  // note must be byte-canonical apart from the sig seam.
+  const tail = lines.slice(3);
+  let sig = null;
+  if (tail.length >= 1 && tail[0].startsWith('sig:')) {
+    if (tail.length !== 2 || tail[1] !== '') throw new Error('junk after sig line');
+    sig = Buffer.from(tail[0].slice(4), 'base64');
+  } else {
+    if (tail.length !== 1 || tail[0] !== '') throw new Error('unexpected trailing line: ' + JSON.stringify(tail[0]));
+  }
   return {
     origin: lines[0], size, root,
-    signed: sigIdx !== -1,
-    sig: sigIdx !== -1 ? Buffer.from(lines[sigIdx].slice(4), 'base64') : null,
+    signed: sig !== null,
+    sig,
     body: lines.slice(0, 3).join('\n') + '\n',
   };
 }
