@@ -32,8 +32,9 @@ Zero-dep stdlib Node, standalone-extraction style (mirrors SuperInstance/coev).
 
 Anchored checkpoint at size 5. Delete rows 4–5: the L0 fnv1a chain still verifies
 clean (that's the hole); the sealed checkpoint at size 5 refuses to agree with a
-re-seal of the truncated ledger. See `test/run.js` — the truncation catch is
-pinned, not narrated.
+re-seal of the truncated ledger. Run `node src/truncate-demo.js` for the narrated
+version — truncation, rollback, and same-size forgery, each caught live — or see
+`test/run.js` where the truncation catch is pinned, not narrated.
 
 ## Honest limits (from the study, kept loud)
 
@@ -55,8 +56,9 @@ node test/run.js
 
 ## Status
 
-v0.1.0 — tree + checkpoint core, 16 pins green. v0.2.0 (open PRs): L2 anchor
-channel (a) witness-repo git anchoring (#1), truncate-demo sales artifact (#2),
-channel (b) sibling-seal digest embedding (#3, this branch is independent of
-#1/#2 — rebase expected on merge of either). Remaining: Ed25519 sig seam on
-canonical notes; L3 quorum designed in the study, not built.
+v0.2.0 — L1 Merkle checkpoints + L2 anchor channel (a) witness-repo git anchoring
++ channel (b) sibling-seal digest embedding + truncate-demo sales artifact,
+all merged on main. Ed25519 sig seam filled on canonical notes (v0.1 signer
+seam). Remaining: L3 witness quorum — client-side mechanism open as PR #7
+(policy + cosig verification); witness daemons gated on extraction #4 + two
+always-on hosts. L4 TSA rejected in the study.

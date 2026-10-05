@@ -28,5 +28,5 @@ Lane: study → build. Author: snowball pulse.
 2. `src/checkpoint.js` — C2SP-shaped note + Ed25519 sig seam ✅ (this window, sig seam documented)
 3. `src/anchor.js` — git witness-repo channel + sibling-seal digest channel, FAIL-first:
    truncated WAL passes L0, fails anchored-checkpoint compare ← **next window**
-4. `src/truncate-demo.js` — standalone sales artifact driving the whole story ← after anchor
+4. `src/truncate-demo.js` — standalone sales artifact driving the whole story ✅ (this window)
 5. Pins: vectors, truncation catch, cross-channel agree ← vectors + truncation landed
