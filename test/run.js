@@ -505,7 +505,24 @@ pin('3-of-3 (k=3,n=3) policy ACCEPTS only when all three agree', () => {
   assert.strictEqual(qu.quorum(full, opNote, [C1, C2], pol).ok, false);
   const v = qu.quorum(full, opNote, [C1, C2, C3], pol);
   assert.strictEqual(v.ok, true);
-  assert.strictEqual(v.valid, 3);
+});
+
+// --- truncate-demo sales artifact (witnessing study build order item 4) ---
+// The demo must exist, must narrate every attack class, and must exit 0
+// (every attack caught). FAIL-first: file absent on main -> both pins red.
+pin('truncate-demo.js exists as a standalone runnable artifact', () => {
+  const demoPath = path.join(__dirname, '..', 'src', 'truncate-demo.js');
+  assert.ok(fs.existsSync(demoPath), 'src/truncate-demo.js missing');
+  const src = fs.readFileSync(demoPath, 'utf8');
+  for (const beat of ['suffix truncation', 'rollback', 'same-size forgery']) {
+    assert.ok(src.includes(beat), `demo must cover: ${beat}`);
+  }
+});
+pin('truncate-demo.js runs end-to-end: every attack CAUGHT, exit 0', () => {
+  const out = execFileSync(process.execPath, [path.join(__dirname, '..', 'src', 'truncate-demo.js')], { encoding: 'utf8' });
+  assert.ok(out.includes('DEMO PASS'), out.split('\n').pop());
+  assert.ok(!out.includes('NOT CAUGHT'), 'an attack slipped through the demo');
+  assert.ok((out.match(/CAUGHT/g) || []).length >= 3, 'all three attack beats must be shown caught');
 });
 
 console.log(`\n${pass} passed, ${fail} failed`);

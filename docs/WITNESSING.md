@@ -26,7 +26,7 @@ Lane: study → build. Author: snowball pulse.
 
 1. `src/tree.js` — RFC 6962 root + consistency proofs, pinned vs vectors ✅ (this window)
 2. `src/checkpoint.js` — C2SP-shaped note + Ed25519 sig seam ✅ (this window, sig seam documented)
-3. `src/anchor.js` — git witness-repo channel + sibling-seal digest channel ✅ (merged #6/#1/#3)
-4. `src/quorum.js` — L3 witness quorum: client-side named policy, strict-majority bound, persist-before-cosign, fork=conflict (409-class) ✅ (this window)
-5. `src/truncate-demo.js` — standalone sales artifact driving the whole story ← next window
-6. Pins: vectors, truncation catch, cross-channel agree ← vectors + truncation landed
+3. `src/anchor.js` \— git witness-repo channel + sibling-seal digest channel \✅ (merged #6/#1/#3); FAIL-first: truncated WAL passes L0, fails anchored-checkpoint compare
+4. `src/quorum.js` \— L3 witness quorum: client-side named policy, strict-majority bound, persist-before-cosign, fork=conflict (409-class) \✅ (this window)
+5. `src/truncate-demo.js` \— standalone sales artifact driving the whole story \✅ (this window)
+6. Pins: vectors, truncation catch, cross-channel agree \← vectors + truncation landed
