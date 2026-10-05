@@ -1,0 +1,11 @@
+{
+  "ledger": "pr8-truncate-demo-pristine-audit",
+  "decision": "pristine-audit-receipt",
+  "date": "2026-10-05",
+  "verdict": "PR #8 head (truncate-demo-sales-artifact) verified PRISTINE via fresh-audit-pr.sh v0 wrapper (selftest 3/3): depth-1 clone of the pushed branch, CWD anchored, node test/run.js = 59 passed, 0 failed — exactly matching the 18:11 pulse claim (suite 57->59, PRISTINE PASS on pushed head); note: naive pin command 'node --test test/' is WRONG for this repo (runner is test/run.js, no package.json test script) — first pristine attempt RED on command choice, not on code; correct runner passes clean; records the pristine pass the PR body claimed but never committed as a receipt",
+  "repro": "scripts/fresh-audit-pr.sh selftest  (3/3 green); scripts/fresh-audit-pr.sh run https://github.com/SuperInstance/fleet-witness truncate-demo-sales-artifact node test/run.js  (PASS, 59/59); clone dir throwaway, nothing outside the branch touched; main untouched",
+  "payload_sha256": "audit object is the pushed branch itself; suite output 59 passed / 0 failed exit 0",
+  "new_findings": [],
+  "escalations": [],
+  "threshold_changes_applied": "none (docs-only receipt; no code, no thresholds; per 15:05 rule every PR opened or trusted must have pins run PRISTINE — this records that run for fleet-witness #8)"
+}
