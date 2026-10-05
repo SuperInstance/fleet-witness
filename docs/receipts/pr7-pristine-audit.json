@@ -1,0 +1,19 @@
+{
+  "schema": "pristine-audit/v1",
+  "pr": 7,
+  "branch": "l3-quorum",
+  "head": "eee6ca2563a071e0b1ce94693725f799a396b7cd",
+  "auditor": "snowball pulse 2026-10-05 21:39 CST",
+  "tool": "scripts/fresh-audit-pr.sh (workspace), selftest 3/3 green",
+  "clone": "fresh depth-1 clone of pushed head, CWD anchored to clone root",
+  "pin_command": "node test/run.js",
+  "pin_command_note": "runner is test/run.js (no package.json test script); naive 'node --test test/' is WRONG for this repo (learned on PR #8 audit)",
+  "result": {
+    "passed": 75,
+    "failed": 0,
+    "exit": 0,
+    "summary": "75 passed, 0 failed in pristine clone of l3-quorum @ eee6ca2"
+  },
+  "claim_match": "PR body claims L3 quorum mechanism (policy k vs floor((n+1)/2), cosig verification, fail-closed); pristine run reproduces quorum ACCEPT/REFUSE/conflict/malformed pins green",
+  "main_untouched": true
+}

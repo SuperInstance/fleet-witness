@@ -1,4 +1,4 @@
-# L3 witness quorum — design only (not built)
+# L3 witness quorum — design + client-side mechanism (witness service still gated)
 
 Source: `memory/study/witnessing-study-2026-10-04.md` (R7, sealed ~08:20 GMT+8).
 Status per study verdict: **L1+L2 adopted now, L3 designed-not-built, L4 rejected.**
@@ -113,11 +113,28 @@ by a key not in the policy is not merely insufficient — it is refused
   mechanism ≠ witnessing. Until a cosig from a different trust domain exists on
   disk, this repo ships an anchoring mechanism, not a witness network.
 
-## Build gate (when this stops being design-only)
+## Build status (updated 2026-10-05 pulse)
 
-Per the study, L3 is not built until **(1)** extraction #4 lands (receipt/WAL
-generic subset — fleet formats stabilizing) and **(2)** at least two of the
-three hosts run always-on daemons. Build order then: witness service (fetch →
-consistency-verify → persist → cosign, one file per origin) → policy-file parser
-+ client-side quorum check → cross-host drill: freeze one witness, verify the
+Per the study, L3 is not a witness network until **(1)** extraction #4 lands (receipt/WAL
+generic subset — fleet formats stabilizing) and **(2)** at least two of the three hosts
+run always-on daemons. The client-side half shipped in v0.2 (this window):
+`src/quorum.js` — policy-file loader (design-doc shape; policy k is CHECKED against
+the strict-majority floor, never trusted), operator-note + witness-cosig verification
+over the checkpoint.js v0.1 signer seam, duplicate-witness dedup,
+fork=conflict (409-class) / unparsable-or-size-mismatch=malformed (422-class) /
+verified-but-unlisted-key=unrecognized-key (fail-closed), and the
+persist-before-cosign mirror: a quorum must attest the caller's OWN local re-seal.
+20 pins in test/run.js; FAIL-first verified against pristine main (import dies —
+quorum.js absent). Nous v5.67 still binds: with no real cosig from another trust
+domain on disk, this repo ships an anchoring mechanism + a quorum checker, not a
+witness network.
+
+Remaining build order: witness service (fetch → consistency-verify → persist →
+cosign, one file per origin) → cross-host drill: freeze one witness, verify the
 remaining two keep quorum live and the frozen one's clients fail closed.
+
+## Pristine-run receipt (fresh-audit v0, canonical tool quilt-tools#45)
+
+- 2026-10-05 07:56 CST snowball pulse: `node tools/fresh-audit/fresh-audit.mjs SuperInstance/fleet-witness 7`
+  → fresh clone of head `l3-quorum` (c21cb39): runner test/run.js PASS — 75 passed, 0 failed;
+  verdict: all discovered runners GREEN in fresh clone. No phantom-RED class on this PR.
